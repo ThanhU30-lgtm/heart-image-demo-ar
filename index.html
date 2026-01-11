@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Heart Photo Gallery - Gesture Control</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
+        #canvas-container { width: 100vw; height: 100vh; }
+        #video-container {
+            position: absolute; bottom: 20px; right: 20px;
+            width: 200px; height: 150px; border-radius: 10px;
+            overflow: hidden; border: 2px solid #ff4d4d; transform: scaleX(-1);
+            z-index: 10;
+        }
+        video { width: 100%; height: 100%; object-fit: cover; }
+        .instructions {
+            position: absolute; top: 20px; left: 20px; color: white;
+            background: rgba(255, 77, 77, 0.2); border-left: 4px solid #ff4d4d;
+            padding: 15px; border-radius: 4px; pointer-events: none; z-index: 10;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="instructions">
+        <h2>Trái Tim Hình Ảnh 3D</h2>
+        <p>• Đưa <b>2 bàn tay</b> lên trước Camera.</p>
+        <p>• <b>Dang rộng tay</b> để phóng to từng tấm ảnh.</p>
+        <p>• <b>Khép tay</b> để thu nhỏ về hình trái tim.</p>
+    </div>
+
+    <div id="video-container">
+        <video id="webcam" autoplay playsinline></video>
+    </div>
+    <div id="canvas-container"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/three@0.152.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+
+    <script>
+        // --- CẤU HÌNH CỦA ANH ---
+        // 1. Liệt kê tên các file ảnh anh đã tải lên thư mục này
+        const myImages = [
+            'anh1.jpg', 
+            'anh2.jpg', 
+            'anh3.jpg', 
+            'anh4.jpg'
+        ]; 
+        
+        // 2. Số lượng ô vuông hiển thị (tổng cộng)
+        const totalPlanes = 150; 
+        
+        let scene, camera, renderer;
+        let imageMeshes = [];
+        let targetExplosion = 0;
+
+        // Khởi tạo môi trường 3D
+        function init() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 8; // Khoảng cách nhìn
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+            const loader = new THREE.TextureLoader();
+
+            // Tạo các tấm ảnh xếp thành hình trái tim
+            for (let i = 0; i < totalPlanes; i++) {
+                // Lấy ảnh xoay vòng từ danh sách của anh
+                const texture = loader.load(myImages[i % myImages.length]);
+                
+                const material = new THREE.MeshBasicMaterial({ 
+                    map: texture, 
+                    side: THREE.DoubleSide,
+                    transparent: true,
+                    opacity: 0.9
+                });
+                
+                const geometry = new THREE.PlaneGeometry(0.5, 0.5);
+                const mesh = new THREE.Mesh(geometry, material);
+
+                // CÔNG THỨC TOÁN HỌC HÌNH TRÁI TIM 3D
+                const t = (i / totalPlanes) * Math.PI * 2;
+                // Trục X
+                const x = (16 * Math.pow(Math.sin(t), 3)) / 5;
+                // Trục Y
+                const y = (13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t)) / 5;
+                // Trục Z (tạo độ phồng ngẫu nhiên)
+                const z = (Math.random() - 0.5) * 3;
+
+                mesh.position.set(x, y, z);
+                
+                // Lưu vị trí gốc vào bộ nhớ của vật thể
+                mesh.userData.initialPos = mesh.position.clone();
+                
+                scene.add(mesh);
+                imageMeshes.push(mesh);
+            }
+
+            // Ánh sáng nhẹ
+            const light = new THREE.AmbientLight(0xffffff, 1);
+            scene.add(light);
+        }
+
+        // Vòng lặp hoạt họa (Cập nhật liên tục)
+        function animate() {
+            requestAnimationFrame(animate);
+
+            imageMeshes.forEach((mesh, index) => {
+                const initial = mesh.userData.initialPos;
+                
+                // 1. Hiệu ứng Zoom: Khi tay mở rộng, từng tấm ảnh to lên
+                const currentScale = 1 + (targetExplosion * 2.5);
+                mesh.scale.set(currentScale, currentScale, currentScale);
+
+                // 2. Hiệu ứng Bay: Khi tay mở rộng, các ảnh bay xa tâm
+                const flyFactor = 1 + (targetExplosion * 2);
+                mesh.position.x = initial.x * flyFactor;
+                mesh.position.y = initial.y * factor = initial.y * flyFactor;
+                mesh.position.z = initial.z * flyFactor;
+
+                // 3. Luôn xoay ảnh về phía Camera để anh nhìn rõ mặt mình
+                mesh.lookAt(camera.position);
+
+                // 4. Xoay nhẹ cả khối trái tim cho sinh động
+                mesh.position.applyAxisAngle(new THREE.Vector3(0, 1, 0), 0.005);
+                mesh.userData.initialPos.applyAxisAngle(new THREE.Vector3(0, 1, 0), 0.005);
+            });
+
+            renderer.render(scene, camera);
+        }
+
+        // --- PHẦN NHẬN DIỆN CỬ CHỈ TAY (MEDIAPIPE) ---
+        const videoElement = document.getElementById('webcam');
+        const hands = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+        });
+
+        hands.setOptions({
+            maxNumHands: 2,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.6,
+            minTrackingConfidence: 0.6
+        });
+
+        hands.onResults((results) => {
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length === 2) {
+                // Lấy mốc cổ tay của 2 tay
+                const h1 = results.multiHandLandmarks[0][0];
+                const h2 = results.multiHandLandmarks[1][0];
+
+                // Tính khoảng cách
+                const dist = Math.sqrt(Math.pow(h1.x - h2.x, 2) + Math.pow(h1.y - h2.y, 2));
+
+                // Chuyển đổi khoảng cách tay sang mức độ bùng nổ (0 đến 1)
+                let level = (dist - 0.2) / 0.5;
+                targetExplosion = Math.max(0, Math.min(1, level));
+            } else {
+                // Nếu không thấy 2 tay, tự động co về hình trái tim
+                targetExplosion = 0;
+            }
+        });
+
+        const cameraUtils = new Camera(videoElement, {
+            onFrame: async () => { await hands.send({ image: videoElement }); },
+            width: 640, height: 480
+        });
+        cameraUtils.start();
+
+        // Xử lý khi đổi kích thước màn hình
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        init();
+        animate();
+    </script>
+</body>
+</html>
